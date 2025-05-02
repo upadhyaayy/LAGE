@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #2e2e43, #a18cd1, #c8ffe0);
+            color: white;
+            background-color: #f4f4f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .container {
+            text-align: center;
+            width: 90%;
+            max-width: 600px;
+            background-color: #2c2c3e;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .header {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .input-container {
+            display: flex;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .input-container input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        .input-container button {
+            padding: 10px 20px;
+            background-color: #6c63ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .input-container button:hover {
+            background-color: #5753d6;
+        }
+
+        .dropdown-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            color: white;
+        }
+
+        .dropdown-item:hover {
+            background-color: #5753d6;
+        }
+
+        .dropdown-item.highlight {
+            background-color: #5753d6;
+        }
+
+
+
+        .response {
+            margin-top: 20px;
+            text-align: left;
+            background-color: #3a3a4f;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Welcome to LAGE.</h1>
+    <div class="container">
+        <div class="header">How can I assist you?</div>
+        <div class="input-container">
+            <input type="text" id="userInput" placeholder="Ask your legal assistant...">
+            <button onclick="sendQuery()">Ask</button>
+        </div>
+        <div id="response" class="response" style="display: none;"></div>
+        <a id="downloadLink" style="display: none; margin-top: 10px; color: #6c63ff;" download="legal_draft.pdf">Download PDF</a>
+    </div>
+
+    <div id="commandDropdown" class="dropdown"
+        style="display: none; position: absolute; top: 100%; left: 0; background: #3a3a4f; border-radius: 5px; padding: 5px; z-index: 10;">
+        <div class="dropdown-item" onclick="setCommand('/summary')">📄 Summary</div>
+        <div class="dropdown-item" onclick="setCommand('/find')">🔍 Find Document</div>
+        <div class="dropdown-item" onclick="setCommand('/casepredict')">⚖️ Case Prediction</div>
+        <div class="dropdown-item" onclick="setCommand('/draft')">✍️ Draft Legal Statement</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script>
+        let selectedIndex = -1;
+        const inputField = document.getElementById('userInput');
+        const dropdown = document.getElementById('commandDropdown');
+
+        inputField.addEventListener('keydown', (e) => {
+            const visible = dropdown.style.display === 'block';
+            const allItems = dropdown.querySelectorAll('.dropdown-item');
+
+            if (!visible || allItems.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = (selectedIndex + 1) % allItems.length;
+                updateHighlight(allItems);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = (selectedIndex - 1 + allItems.length) % allItems.length;
+                updateHighlight(allItems);
+            } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                e.preventDefault();
+                allItems[selectedIndex].click();
+                selectedIndex = -1;
+            }
+        });
+
+        function updateHighlight(items) {
+            items.forEach((item, index) => {
+                item.classList.toggle('highlight', index === selectedIndex);
+            });
+        }
+
+        inputField.addEventListener('input', () => {
+            const value = inputField.value;
+            const lastChar = value.slice(-1);
+
+            if (lastChar === '/') {
+                const rect = inputField.getBoundingClientRect();
+                dropdown.style.left = rect.left + 'px';
+                dropdown.style.top = rect.bottom + 'px';
+                dropdown.style.display = 'block';
+            } else if (!value.includes('/')) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        function setCommand(command) {
+            const currentValue = inputField.value;
+            const updated = currentValue.replace(/\/[^ ]*$/, command + ' ');
+            inputField.value = updated;
+            dropdown.style.display = 'none';
+            inputField.focus();
+        }
+
+        async function sendQuery() {
+            const userInput = document.getElementById('userInput').value.trim();
+            const responseDiv = document.getElementById('response');
+            const downloadLink = document.getElementById('downloadLink');
+
+            if (!userInput) {
+                alert("Please enter a question.");
+                return;
+            }
+
+            responseDiv.style.display = "none";
+            downloadLink.style.display = "none";
+            responseDiv.innerHTML = "";
+
+            try {
+                const response = await fetch('http://localhost:3000/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: userInput }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch response from server. Status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text ||
+                    result.candidates?.[0]?.content ||
+                    JSON.stringify(result.candidates?.[0], null, 2);
+
+                responseDiv.style.display = "block";
+                responseDiv.innerHTML = `<strong>Response:</strong> ${generatedText}`;
+
+                if (userInput.startsWith('/find')) {
+                    // Try opening a Google search for the user
+                    const query = encodeURIComponent(userInput.replace('/find', '').trim());
+                    window.open(`https://www.google.com/search?q=${query} legal document`, '_blank');
+                }
+
+                if (userInput.startsWith('/draft')) {
+                    // Generate and download a PDF
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    const lines = doc.splitTextToSize(generatedText, 180);
+                    doc.text(lines, 10, 10);
+                    const pdfBlob = doc.output('blob');
+
+                    const url = URL.createObjectURL(pdfBlob);
+                    downloadLink.href = url;
+                    downloadLink.style.display = "inline";
+                }
+
+            } catch (error) {
+                responseDiv.style.display = "block";
+                responseDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        }
+
+
+    </script>
+</body>
+
+</html>
