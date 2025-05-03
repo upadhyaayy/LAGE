@@ -11,7 +11,7 @@
             font-family: 'Quicksand', sans-serif;
             margin: 0;
             padding: 0;
-            background: linear-gradient(to bottom, #2e2e43, #a18cd1, #c8ffe0);
+            background: linear-gradient(to bottom, #2e2e43, #7e69af, #c8ffe0);
             color: white;
             background-color: #f4f4f4;
             display: flex;
@@ -77,14 +77,14 @@
             background-color: #5753d6;
         }
 
-
-
         .response {
             margin-top: 20px;
             text-align: left;
             background-color: #3a3a4f;
             padding: 10px;
             border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -200,22 +200,73 @@
                 responseDiv.innerHTML = `<strong>Response:</strong> ${generatedText}`;
 
                 if (userInput.startsWith('/find')) {
-                    // Try opening a Google search for the user
-                    const query = encodeURIComponent(userInput.replace('/find', '').trim());
-                    window.open(`https://www.google.com/search?q=${query} legal document`, '_blank');
+                    const query = userInput.replace('/find', '').trim();
+
+                    if (!query) {
+                        responseDiv.style.display = "block";
+                        responseDiv.innerHTML = `<strong>Error:</strong> Please provide a search query.`;
+                        return;
+                    }
+
+                    const response = await fetch('http://localhost:3000/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: `/find ${query}` }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch response from server. Status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const links = result.links || [];
+
+                    if (links.length === 0) {
+                        responseDiv.style.display = "block";
+                        responseDiv.innerHTML = `<strong>Response:</strong> No results found for your query.`;
+                        return;
+                    }
+
+                    // Display the links in the responseDiv
+                    responseDiv.style.display = "block";
+                    responseDiv.innerHTML = `<strong>Search Results:</strong><ul>${links.map(link => `
+                        <li>
+                            <a href="${link.link}" target="_blank">${link.title}</a>
+                            <p>${link.snippet}</p>
+                        </li>`).join('')}</ul>`;
                 }
 
                 if (userInput.startsWith('/draft')) {
-                    // Generate and download a PDF
-                    const { jsPDF } = window.jspdf;
-                    const doc = new jsPDF();
-                    const lines = doc.splitTextToSize(generatedText, 180);
-                    doc.text(lines, 10, 10);
-                    const pdfBlob = doc.output('blob');
+                    const draftInput = userInput.replace('/draft', '').trim();
 
-                    const url = URL.createObjectURL(pdfBlob);
+                    // Send the draft input to the server to generate the complaint letter
+                    const response = await fetch('http://localhost:3000/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: `/draft ${draftInput}` }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch response from server. Status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text ||
+                        result.candidates?.[0]?.content ||
+                        JSON.stringify(result.candidates?.[0], null, 2);
+
+                    // Create a downloadable .txt file with the generated text
+                    const textBlob = new Blob([generatedText], { type: 'text/plain' });
+                    const url = URL.createObjectURL(textBlob);
+
+                    const downloadLink = document.getElementById('downloadLink');
                     downloadLink.href = url;
+                    downloadLink.download = "complaint_letter.txt"; // Set the file name
                     downloadLink.style.display = "inline";
+
+                    // Show a one-line response
+                    responseDiv.style.display = "block";
+                    responseDiv.innerHTML = `<strong>Response:</strong> Your draft is ready. Please download it using the link below.`;
                 }
 
             } catch (error) {
