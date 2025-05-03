@@ -6,17 +6,13 @@ require('dotenv').config();
 const app = express();
 const PORT = 3000;
 
-// Enable CORS for local development
 app.use(cors());
 app.use(express.json());
 
-// Serve the frontend HTML file
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'gnec.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Endpoint to handle API requests
-// Endpoint to handle API requests
 app.post('/api/generate', async (req, res) => {
     const userInput = req.body.text?.trim();
 
@@ -27,40 +23,60 @@ app.post('/api/generate', async (req, res) => {
     let promptParts = [];
 
     try {
-        if (userInput.startsWith('//summary')) {
-            const content = userInput.replace('//summary', '').trim();
+        if (userInput.startsWith('/summary')) { 
+            const content = userInput.replace('/summary', '').trim();
             promptParts = [
-                { text: "Summarize the following legal document in no more than 5 professional lines:" },
+                { text: "Summarize the following legal document in no more than 6 professional lines:" },
                 { text: content }
             ];
 
-        } else if (userInput.startsWith('//find')) {
-            const keyword = userInput.replace('//find', '').trim();
-            const documentText = findDocumentByKeyword(keyword); // You implement this
-            if (!documentText) {
-                return res.json({ candidates: [{ content: "No document found with that keyword." }] });
-            }
-            promptParts = [
-                { text: `Summarize and describe the legal document related to "${keyword}" in 5 lines:` },
-                { text: documentText }
-            ];
+        } else if (userInput.startsWith('/find')) { 
+            const query = userInput.replace('/find', '').trim();
 
-        } else if (userInput.startsWith('//casepredict')) {
-            const caseDescription = userInput.replace('//casepredict', '').trim();
+            if (!query) {
+                return res.status(400).json({ error: 'Search query is required.' });
+            }
+
+            try {
+                // Use a search API to fetch relevant links
+                const searchApiUrl = `https://www.googleapis.com/customsearch/v1?key=${process.env.SEARCH_API_KEY}&cx=${process.env.SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)} legal document`;
+
+                const searchResponse = await fetch(searchApiUrl);
+                if (!searchResponse.ok) {
+                    const errorText = await searchResponse.text();
+                    console.error(`Search API Error: ${errorText}`);
+                    throw new Error(`Search API failed. Status: ${searchResponse.status}`);
+                }
+
+                const searchData = await searchResponse.json();
+                const links = searchData.items?.map(item => ({
+                    title: item.title,
+                    link: item.link,
+                    snippet: item.snippet,
+                })) || [];
+
+                // Return the links to the client
+                return res.json({ links });
+            } catch (error) {
+                console.error(`Error in /find: ${error.message}`);
+                return res.status(500).json({ error: 'Failed to fetch search results.' });
+            }
+            
+        } else if (userInput.startsWith('/casepredict')) {
+            const caseDescription = userInput.replace('/casepredict', '').trim();
             promptParts = [
-                { text: "Given the following scenario, predict the possible legal outcome in 5 professional lines:" },
+                { text: "Given the following scenario, predict the possible legal outcome in maximum 7 professional lines:" },
                 { text: caseDescription }
             ];
 
-        } else if (userInput.startsWith('//draft')) {
-            const draftInput = userInput.replace('//draft', '').trim();
+        } else if (userInput.startsWith('/draft')) {
+            const draftInput = userInput.replace('/draft', '').trim();
             promptParts = [
-                { text: "Draft a short legal statement or notice (max 5 lines) for the following case:" },
+                { text: "Draft a formal complaint letter based on the following details:" },
                 { text: draftInput }
             ];
 
         } else {
-            // Default behavior – normal legal Q&A
             promptParts = [
                 { text: "You are a legal assistant helping women with gender discrimination issues. Respond professionally in no more than 5 lines." },
                 { text: userInput }
